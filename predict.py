@@ -31,24 +31,22 @@ OUTPUT_SAMPLE_RATE = 24000
 
 class Predictor(BasePredictor):
     def setup(self) -> None:
-        """One-time model + encoder load on container start."""
+        """One-time model + encoder load on container start.
+
+        Weights are baked into the image at build time (see cog.yaml's
+        `run` block that mounts HF_TOKEN as a build secret). At runtime,
+        we just load from the local HF cache — no token required.
+        """
         # Import here so cog can introspect Predictor without the heavy deps.
         from tada.modules.encoder import Encoder
         from tada.modules.tada import TadaForCausalLM, InferenceOptions
 
-        token = os.environ.get("HF_TOKEN")
-        if not token:
-            raise RuntimeError(
-                "HF_TOKEN env var is required to download Llama-3.2-licensed "
-                "TADA weights. Set it as a secret in the Replicate model settings."
-            )
-
         device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = device
 
-        # Default English encoder
+        # Default English encoder (from local cache populated at build)
         self.encoder_en = Encoder.from_pretrained(
-            CODEC_REPO, subfolder="encoder", token=token
+            CODEC_REPO, subfolder="encoder"
         ).to(device)
         self._encoder_cache: dict[str, object] = {"en": self.encoder_en}
 
@@ -56,24 +54,21 @@ class Predictor(BasePredictor):
         self.model = TadaForCausalLM.from_pretrained(
             MODEL_REPO,
             torch_dtype=torch.bfloat16,
-            token=token,
         ).to(device)
         self.model.eval()
 
         self.InferenceOptions = InferenceOptions
-        self._token = token
 
     # --------------------------------------------------------------- helpers
 
     def _get_encoder(self, language: str):
-        """Lazy-load language-specific encoders on demand."""
+        """Lazy-load language-specific encoders on demand (from local cache)."""
         if language not in self._encoder_cache:
             from tada.modules.encoder import Encoder
             self._encoder_cache[language] = Encoder.from_pretrained(
                 CODEC_REPO,
                 subfolder="encoder",
                 language=language,
-                token=self._token,
             ).to(self.device)
         return self._encoder_cache[language]
 

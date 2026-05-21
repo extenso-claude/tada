@@ -3,25 +3,38 @@
 This fork adds `cog.yaml` + `predict.py` so the upstream HumeAI/tada repo can
 be self-hosted on Replicate via GitHub auto-build.
 
-## One-time setup (you do this in the Replicate UI)
+## One-time setup
 
-1. Go to https://replicate.com/create
-2. Model name: `tada-voice` (full URL becomes `extenso-claude/tada-voice`)
-3. Visibility: **Private** (recommended — the model exposes voice cloning).
-4. Hardware: **Nvidia L40S** (48 GB VRAM, ~$0.001125/sec while running).
-5. Source code: **Connect a GitHub repository** → `extenso-claude/tada` →
-   default branch `main`.
-6. Build settings → **Secrets** → add:
-   - Name: `HF_TOKEN`
-   - Value: your Hugging Face token (must have accepted Meta Llama 3.2
-     Community License at https://huggingface.co/meta-llama/Llama-3.2-3B)
-7. Click **Create model**. Replicate auto-builds on push.
+### 1. Model on Replicate (already created)
 
-## First build
+`extenso-claude/tada-voice` exists at https://replicate.com/extenso-claude/tada-voice
+(Private, Nvidia L40S). No further Replicate UI steps needed.
 
-After the model is created, push a commit (or click "Rebuild") to trigger the
-first build. Builds take ~10-15 minutes (downloading Llama-3.2 + TADA weights
-into the image is the slow part).
+### 2. GitHub Actions secrets (MANUAL STEP)
+
+Go to https://github.com/extenso-claude/tada/settings/secrets/actions and add
+**two repository secrets**:
+
+| Secret name | Value |
+|---|---|
+| `REPLICATE_API_TOKEN` | Your Replicate API token from https://replicate.com/account/api-tokens |
+| `HF_TOKEN` | A Hugging Face token (https://huggingface.co/settings/tokens) on an account that has accepted the Llama 3.2 Community License at https://huggingface.co/meta-llama/Llama-3.2-3B |
+
+### 3. Trigger the build
+
+Once the secrets are set, go to https://github.com/extenso-claude/tada/actions
+and run the **Push to Replicate** workflow (or push any commit to `main`).
+
+The workflow:
+1. Reclaims disk space on the GitHub runner (~14 GB free is tight for our image)
+2. Installs Cog
+3. Logs into Replicate
+4. Runs `cog push r8.im/extenso-claude/tada-voice --secret HF_TOKEN=...`
+5. The `cog.yaml` `run` block uses the mounted `HF_TOKEN` to download Llama-3.2-licensed
+   TADA weights INTO the image. The runtime container never needs the token.
+
+Build takes ~30-60 minutes (most of it is downloading Llama 3.2 3B + the
+tada-codec into the GitHub runner, then pushing the layered image to Replicate).
 
 ## Inputs
 

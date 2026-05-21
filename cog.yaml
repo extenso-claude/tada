@@ -1,12 +1,14 @@
 # Cog config for self-hosting HumeAI/tada on Replicate.
 #
-# Replicate deploys this when extenso-claude/tada is connected to a Replicate
-# model via GitHub auto-build. After connecting, set HF_TOKEN as a
-# secret env var in the Replicate model settings so the runtime can fetch
-# the gated Llama-3.2-based weights from Hugging Face.
+# Deployment is via GitHub Actions — pushing to main triggers
+# .github/workflows/push.yml which runs `cog push r8.im/extenso-claude/tada-voice`
+# with HF_TOKEN as a build-time secret. The Llama-3.2-licensed TADA + tada-codec
+# weights are downloaded INTO the image during build so the runtime container
+# never needs HF_TOKEN.
 #
-# Model: extenso-claude/tada-voice (created on Replicate UI)
-# Hardware: Nvidia L40S recommended (48 GB VRAM, well above 3B bf16's ~9 GB).
+# Model: extenso-claude/tada-voice (Private, Nvidia L40S)
+# Image size after build: ~12-15 GB (Llama 3.2 3B in bf16 + codec)
+# First cold start: ~1-2 min (loading weights from local image disk)
 build:
   gpu: true
   cuda: "12.1"
@@ -14,6 +16,7 @@ build:
   system_packages:
     - "ffmpeg"
     - "libsndfile1"
+    - "git"
   python_packages:
     - "torch==2.4.0"
     - "torchaudio==2.4.0"
@@ -22,5 +25,26 @@ build:
     - "hume-tada"
     - "soundfile"
     - "numpy<2.0"
+  run:
+    # Bake gated HumeAI/tada weights into the image at build time.
+    # The HF_TOKEN secret is passed via `cog push --secret HF_TOKEN=...`
+    # (set up by the GitHub Action). After build, the weights live in
+    # /root/.cache/huggingface and the runtime never needs the token.
+    - command: |
+        export HF_TOKEN=$(cat /run/secrets/HF_TOKEN) && \
+        export HF_HUB_DOWNLOAD_TIMEOUT=600 && \
+        python -c "
+        from huggingface_hub import snapshot_download
+        import os
+        token = os.environ['HF_TOKEN']
+        print('Downloading HumeAI/tada-codec...')
+        snapshot_download('HumeAI/tada-codec', token=token)
+        print('Downloading HumeAI/tada-3b-ml...')
+        snapshot_download('HumeAI/tada-3b-ml', token=token)
+        print('All weights cached.')
+        "
+      mounts:
+        - type: secret
+          id: HF_TOKEN
 
 predict: "predict.py:Predictor"

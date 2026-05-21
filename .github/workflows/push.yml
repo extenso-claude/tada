@@ -1,0 +1,52 @@
+name: Push to Replicate
+
+# Triggers:
+#   - push to main: auto-build + push on every commit
+#   - workflow_dispatch: manual run from the Actions tab
+on:
+  push:
+    branches: [main]
+    paths:
+      - "cog.yaml"
+      - "predict.py"
+      - "tada/**"
+      - "pyproject.toml"
+      - ".github/workflows/push.yml"
+  workflow_dispatch: {}
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    steps:
+      # The Cog image with baked Llama 3.2 3B (bf16) + tada-codec is ~12-15 GB.
+      # Default GitHub runners only have ~14 GB free, so we reclaim disk first.
+      - name: Maximize build space
+        uses: easimon/maximize-build-space@v10
+        with:
+          root-reserve-mb: 4096
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+
+      - uses: actions/checkout@v4
+
+      - name: Install Cog
+        run: |
+          sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m)"
+          sudo chmod +x /usr/local/bin/cog
+          cog --version
+
+      - name: Log in to Replicate
+        env:
+          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+        run: |
+          echo "$REPLICATE_API_TOKEN" | cog login --token-stdin
+
+      - name: Build + push to Replicate
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          cog push r8.im/extenso-claude/tada-voice \
+            --secret HF_TOKEN="$HF_TOKEN"

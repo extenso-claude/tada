@@ -11,20 +11,20 @@
 # First cold start: ~1-2 min (loading weights from local image disk)
 build:
   gpu: true
-  cuda: "12.1"
+  cuda: "12.4"
   python_version: "3.11"
   system_packages:
     - "ffmpeg"
     - "libsndfile1"
     - "git"
   python_packages:
-    - "torch==2.4.0"
-    - "torchaudio==2.4.0"
-    - "transformers>=4.45.0"
+    # hume-tada requires torch>=2.7.0,<2.8.0 and transformers>=4.57.1
+    - "torch==2.7.1"
+    - "torchaudio==2.7.1"
+    - "transformers>=4.57.1,<5"
     - "huggingface_hub>=0.25.0"
     - "hume-tada"
     - "soundfile"
-    - "numpy<2.0"
   run:
     # Bake gated HumeAI/tada weights into the image at build time.
     # The HF_TOKEN secret is passed via `cog push --secret HF_TOKEN=...`

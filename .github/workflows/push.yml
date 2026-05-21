@@ -18,17 +18,23 @@ jobs:
   push:
     runs-on: ubuntu-latest
     steps:
-      # The Cog image with baked Llama 3.2 3B (bf16) + tada-codec is ~12-15 GB.
-      # Default GitHub runners only have ~14 GB free, so we reclaim disk first.
-      - name: Maximize build space
-        uses: easimon/maximize-build-space@v10
+      # Cog's CUDA base image + baked Llama 3.2 3B (bf16) + tada-codec is ~12-15 GB.
+      # Default GitHub runners only have ~14 GB free on /, so we reclaim ~25-30 GB
+      # by deleting preinstalled tooling we don't need (Android SDK, .NET, Haskell,
+      # large packages, preloaded docker images, swap).
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
         with:
-          root-reserve-mb: 4096
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
-          remove-codeql: 'true'
-          remove-docker-images: 'true'
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Check available space
+        run: df -h /
 
       - uses: actions/checkout@v4
 

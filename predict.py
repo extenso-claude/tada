@@ -31,25 +31,26 @@ OUTPUT_SAMPLE_RATE = 24000
 
 class Predictor(BasePredictor):
     def setup(self) -> None:
-        """One-time model + encoder load on container start.
+        """One-time setup on container start.
 
-        Weights are baked into the image at build time (see cog.yaml's
-        `run` block that mounts HF_TOKEN as a build secret). At runtime,
-        we just load from the local HF cache — no token required and no
-        network access ever (local_files_only=True disables HF calls).
+        Replicate's setup() has a 615s timeout. Loading the full 7 GB
+        TadaForCausalLM weights blows that, so we ONLY load the encoder
+        here. The main model is lazy-loaded on first predict() (which has
+        a 30-minute timeout — plenty of headroom for the heavy load).
+
+        All weights are baked into the image at build time and read from
+        the local HF cache. HF_HUB_OFFLINE=1 ensures no network calls.
         """
         import sys
         print("[setup] starting", flush=True)
 
-        # Force HF to use only local cache — never phone home (which would
-        # hang without HF_TOKEN at runtime).
+        # Force HF to use only local cache — never phone home.
         os.environ["HF_HUB_OFFLINE"] = "1"
         os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
-        # Import here so cog can introspect Predictor without the heavy deps.
         print("[setup] importing tada modules...", flush=True)
         from tada.modules.encoder import Encoder
-        from tada.modules.tada import TadaForCausalLM, InferenceOptions
+        from tada.modules.tada import InferenceOptions
         print("[setup] tada modules imported", flush=True)
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -63,23 +64,41 @@ class Predictor(BasePredictor):
             ).to(device)
             print("[setup] encoder loaded", flush=True)
             self._encoder_cache: dict[str, object] = {"en": self.encoder_en}
-
-            print(f"[setup] loading model from {MODEL_REPO} in bf16 (local-only)...", flush=True)
-            self.model = TadaForCausalLM.from_pretrained(
-                MODEL_REPO,
-                torch_dtype=torch.bfloat16,
-                local_files_only=True,
-            ).to(device)
-            self.model.eval()
-            print("[setup] model loaded", flush=True)
         except Exception as e:
             print(f"[setup] FAILED: {type(e).__name__}: {e}", flush=True)
             import traceback
             traceback.print_exc(file=sys.stderr)
             raise
 
+        # Main model is lazy-loaded on first predict() to stay under the
+        # 615s setup timeout. self.model is None until then.
+        self.model = None
         self.InferenceOptions = InferenceOptions
-        print("[setup] done", flush=True)
+        print("[setup] done (model will lazy-load on first predict)", flush=True)
+
+    def _ensure_model_loaded(self) -> None:
+        """Lazy-load the main TADA model on first predict()."""
+        if self.model is not None:
+            return
+        import sys, time
+        print(f"[lazy-load] loading model from {MODEL_REPO} in bf16, device_map=auto...", flush=True)
+        t0 = time.time()
+        try:
+            from tada.modules.tada import TadaForCausalLM
+            self.model = TadaForCausalLM.from_pretrained(
+                MODEL_REPO,
+                torch_dtype=torch.bfloat16,
+                local_files_only=True,
+                device_map="auto",
+                low_cpu_mem_usage=True,
+            )
+            self.model.eval()
+            print(f"[lazy-load] model loaded in {time.time() - t0:.1f}s", flush=True)
+        except Exception as e:
+            print(f"[lazy-load] FAILED: {type(e).__name__}: {e}", flush=True)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+            raise
 
     # --------------------------------------------------------------- helpers
 
@@ -208,6 +227,10 @@ class Predictor(BasePredictor):
         ),
     ) -> Path:
         """Generate speech in the prompt voice."""
+
+        # Lazy-load the main model on first prediction (kept out of setup()
+        # to stay under Replicate's 615s setup timeout).
+        self._ensure_model_loaded()
 
         if seed is not None and seed >= 0:
             torch.manual_seed(seed)

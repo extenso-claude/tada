@@ -35,29 +35,51 @@ class Predictor(BasePredictor):
 
         Weights are baked into the image at build time (see cog.yaml's
         `run` block that mounts HF_TOKEN as a build secret). At runtime,
-        we just load from the local HF cache — no token required.
+        we just load from the local HF cache — no token required and no
+        network access ever (local_files_only=True disables HF calls).
         """
+        import sys
+        print("[setup] starting", flush=True)
+
+        # Force HF to use only local cache — never phone home (which would
+        # hang without HF_TOKEN at runtime).
+        os.environ["HF_HUB_OFFLINE"] = "1"
+        os.environ["TRANSFORMERS_OFFLINE"] = "1"
+
         # Import here so cog can introspect Predictor without the heavy deps.
+        print("[setup] importing tada modules...", flush=True)
         from tada.modules.encoder import Encoder
         from tada.modules.tada import TadaForCausalLM, InferenceOptions
+        print("[setup] tada modules imported", flush=True)
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = device
+        print(f"[setup] device={device}", flush=True)
 
-        # Default English encoder (from local cache populated at build)
-        self.encoder_en = Encoder.from_pretrained(
-            CODEC_REPO, subfolder="encoder"
-        ).to(device)
-        self._encoder_cache: dict[str, object] = {"en": self.encoder_en}
+        try:
+            print(f"[setup] loading encoder from {CODEC_REPO} (local-only)...", flush=True)
+            self.encoder_en = Encoder.from_pretrained(
+                CODEC_REPO, subfolder="encoder", local_files_only=True
+            ).to(device)
+            print("[setup] encoder loaded", flush=True)
+            self._encoder_cache: dict[str, object] = {"en": self.encoder_en}
 
-        # Main model
-        self.model = TadaForCausalLM.from_pretrained(
-            MODEL_REPO,
-            torch_dtype=torch.bfloat16,
-        ).to(device)
-        self.model.eval()
+            print(f"[setup] loading model from {MODEL_REPO} in bf16 (local-only)...", flush=True)
+            self.model = TadaForCausalLM.from_pretrained(
+                MODEL_REPO,
+                torch_dtype=torch.bfloat16,
+                local_files_only=True,
+            ).to(device)
+            self.model.eval()
+            print("[setup] model loaded", flush=True)
+        except Exception as e:
+            print(f"[setup] FAILED: {type(e).__name__}: {e}", flush=True)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+            raise
 
         self.InferenceOptions = InferenceOptions
+        print("[setup] done", flush=True)
 
     # --------------------------------------------------------------- helpers
 

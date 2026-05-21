@@ -17,7 +17,7 @@ Go to https://github.com/extenso-claude/tada/settings/secrets/actions and add
 
 | Secret name | Value |
 |---|---|
-| `REPLICATE_API_TOKEN` | Your Replicate API token from https://replicate.com/account/api-tokens |
+| `REPLICATE_API_TOKEN` | **CLI auth token** from https://replicate.com/auth/token (NOT the API token at /account/api-tokens — `cog login` rejects API-token format) |
 | `HF_TOKEN` | A Hugging Face token (https://huggingface.co/settings/tokens) on an account that has accepted the Llama 3.2 Community License at https://huggingface.co/meta-llama/Llama-3.2-3B |
 
 ### 3. Trigger the build

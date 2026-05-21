@@ -1,0 +1,26 @@
+# Cog config for self-hosting HumeAI/tada on Replicate.
+#
+# Replicate deploys this when extenso-claude/tada is connected to a Replicate
+# model via GitHub auto-build. After connecting, set HF_TOKEN as a
+# secret env var in the Replicate model settings so the runtime can fetch
+# the gated Llama-3.2-based weights from Hugging Face.
+#
+# Model: extenso-claude/tada-voice (created on Replicate UI)
+# Hardware: Nvidia L40S recommended (48 GB VRAM, well above 3B bf16's ~9 GB).
+build:
+  gpu: true
+  cuda: "12.1"
+  python_version: "3.11"
+  system_packages:
+    - "ffmpeg"
+    - "libsndfile1"
+  python_packages:
+    - "torch==2.4.0"
+    - "torchaudio==2.4.0"
+    - "transformers>=4.45.0"
+    - "huggingface_hub>=0.25.0"
+    - "hume-tada"
+    - "soundfile"
+    - "numpy<2.0"
+
+predict: "predict.py:Predictor"

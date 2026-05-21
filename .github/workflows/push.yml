@@ -49,4 +49,4 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           cog push r8.im/extenso-claude/tada-voice \
-            --secret HF_TOKEN="$HF_TOKEN"
+            --secret id=HF_TOKEN,env=HF_TOKEN
